@@ -1,11 +1,20 @@
-# Recursive Extraction and Build Automation Script
 
-This Python script automates the process of extracting student submission archives, cleaning up their directory structure, and building C++ projects. It is designed to handle common issues in student submissions, such as extra nested folders, whitespace in file and folder names, and redundant folder names containing the substring `_assignsubmission_file`.
+# Recursive Extraction, Build Automation, and Assignment Check Automation
 
-## Features
+This repository contains two Python scripts designed to automate the evaluation of student C++ assignments. The first script extracts student submission archives, cleans and flattens their directory structure, and builds the projects using CMake and Make. The second script runs additional checks on the built projects by parsing build logs and executing Valgrind to detect memory issues, then compiles the results into a consolidated CSV report.
+
+---
+
+## Programs
+
+### 1. Extraction and Build Automation Script
+
+**Script Name:** `untar_and_make.py`
+
+This script automates the following steps:
 
 - **Recursive Extraction:**  
-  Recursively scans a specified input directory for archives (`.tar.gz`, `.tgz`, and `.zip`) and extracts them.
+  It scans a specified input directory for archives (`.tar.gz`, `.tgz`, and `.zip`) and extracts them.
 
 - **Directory Structure Cleaning:**  
   After extraction, the script:
@@ -14,41 +23,77 @@ This Python script automates the process of extracting student submission archiv
   - **Removes redundant folder names:** Strips out the `_assignsubmission_file` substring from folder names to reduce extra nesting.
 
 - **Project Building:**  
-  Searches for the directory containing `Main.cpp` in each extracted project. Once found, it:
+  It recursively searches for the directory containing `Main.cpp` in each extracted project. Once found, it:
   - Deletes any existing `build` folder.
   - Creates a new `build` folder.
-  - Runs `cmake` and `make` to build the project.
-  - Captures and logs the output (with specific filtering of a known CMake deprecation warning) to a `build.log` file within the build folder.
+  - Executes `cmake` (with filtering of a known deprecation warning) and `make` in that folder.
+  - Captures and logs the output to a `build.log` file within the build folder.
 
 - **Logging:**  
-  Uses [loguru](https://github.com/Delgan/loguru) for logging key events and errors. Build command outputs are recorded in a log file.
+  Uses [loguru](https://github.com/Delgan/loguru) to log key events and errors. All command outputs are recorded in log files.
+
+### 2. Assignment Check Automation Script
+
+**Script Name:** `check_assignments.py`
+
+This script is intended to run after the build process. It performs the following actions for each built project:
+
+- **Build Log Analysis:**  
+  Parses the `build.log` file to count compilation errors and warnings using a simple heuristic.
+
+- **Executable Detection:**  
+  Searches the project's build folder for an executable file.
+
+- **Valgrind Memory Check:**  
+  Runs Valgrind (with full leak-check) on the executable and writes its output to `valgrind.log`.  
+  It then parses the Valgrind output to extract the "ERROR SUMMARY" line and determine if there are any memory issues.
+
+- **Report Generation:**  
+  Collects the following information for each project into a CSV report:
+  - Project name.
+  - Number of compilation errors and warnings.
+  - Compilation status.
+  - A flag indicating if the build failed (e.g. due to compilation errors or missing executable).
+  - Path to the executable (if found).
+  - Valgrind status (e.g. "OK", "Memory issues", "Valgrind Error", or "No executable found").
+  - The full error summary from Valgrind (if available).
+
+---
 
 ## Requirements
 
-- Python 3.x
-- [loguru](https://pypi.org/project/loguru/)
-- Standard Python libraries: `os`, `tarfile`, `zipfile`, `shutil`, `argparse`, `subprocess`
+- **Python:** 3.x  
+- **Packages:**
+  - [loguru](https://pypi.org/project/loguru/)
+  - [pandas](https://pandas.pydata.org/) (for the check script)
+- **Standard Python libraries:** `os`, `tarfile`, `zipfile`, `shutil`, `argparse`, `subprocess`
+- **Build Tools:** CMake and Make must be installed.
+- **Valgrind:** Installed on your system (ensure that necessary debug symbol packages are installed for your system).
+
+---
 
 ## Installation
 
 1. **Clone or download the repository.**
 
-2. **Install the required package:**
+2. **Install Python dependencies:**
+
    ```bash
-   pip install loguru
+   pip install loguru pandas / conda install conda-forge::loguru conda-forge::pandas
    ```
+---
 
 ## Usage
 
-Run the script from the command line by specifying the input directory (containing student archives) and the output directory (where cleaned and extracted projects will be placed). For example:
+### Step 1: Extraction and Build
+
+Run the first script to extract and build all student projects:
 
 ```bash
 python3 untar_and_make.py /path/to/archives /path/to/output
 ```
 
-### Example
-
-- **Input Directory Structure:**
+- **Input Directory Structure Example:**
   ```
   /path/to/archives/Name Surname_12345678_assignsubmission_file/9Surnamep.tar.gz
   /path/to/archives/student2/assignment.tar.gz
@@ -56,40 +101,52 @@ python3 untar_and_make.py /path/to/archives /path/to/output
 
 - **Output Directory Structure:**  
   For an archive in `Name Surname_12345678_assignsubmission_file`, the script will:
-  - Remove whitespace (e.g., `"Name Surname_12345678"` becomes `NameSurname_12345678`).
+  - Remove whitespace (e.g., `"Name Surname_12345678"` becomes `Name_Surname_12345678`).
   - Remove the redundant `_assignsubmission_file` substring.
-  - Flatten extra nested folders (e.g., remove the `cpp2025/lab01/` level if it only contains the project files).
-
-  Resulting in an output similar to:
+  - Flatten extra nested folders.
+  
+  The final output might resemble:
   ```
   /path/to/output/Name_Surname_12345678/
   ```
 
+### Step 2: Assignment Check
+
+Once all projects are built, run the second script to perform additional checks and generate a report:
+
+```bash
+python3 check_assignments.py /path/to/output --report report.csv
+```
+
+This will generate a CSV file (`report.csv` by default) containing detailed information for each project regarding:
+- Compilation errors and warnings.
+- Build success or failure.
+- Valgrind memory check status and detailed error summary.
+
+---
+
 ## How It Works
 
 1. **Extraction:**  
-   The script extracts each archive into a corresponding directory in the output folder while preserving the original subdirectory structure (after cleaning).
+   The extraction script scans the input directory, extracts archives into a cleaned directory structure, and builds the projects using CMake and Make. Build logs are stored in each project's `build` folder.
 
 2. **Directory Cleaning:**  
-   Post-extraction, the script:
-   - Flattens unnecessary single-folder wrappers.
-   - Renames files and directories to remove whitespace.
-   - Removes extra folder layers that contain the `_assignsubmission_file` substring.
+   After extraction, the script flattens redundant folders, removes whitespace, and strips out the `_assignsubmission_file` substring from directory names.
 
 3. **Build Process:**  
-   The script searches recursively for the directory containing `Main.cpp`. When found, it:
-   - Deletes any pre-existing `build` folder.
-   - Creates a new `build` folder.
-   - Executes `cmake` (with filtering of a specific deprecation warning) and `make` in that folder.
-   - Logs the command outputs (both stdout and stderr) to a `build.log` file.
+   It locates the folder containing `Main.cpp`, removes any existing build artifacts, creates a new `build` folder, and runs the build commands. Outputs are logged into `build.log`.
 
-4. **Logging:**  
-   Key events and errors are logged to the console via loguru, and detailed build logs are saved in the new build folder.
+4. **Assignment Check:**  
+   The check script analyzes the build logs and uses Valgrind (with its output saved to `valgrind.log`) to assess memory usage. It then compiles all results into a consolidated CSV report.
+
+---
 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
+---
+
 ## Contributing
 
-Contributions are welcome! Please open issues or submit pull requests for improvements or bug fixes.
+Contributions and suggestions are welcome! Please open issues or submit pull requests for improvements or bug fixes.
